@@ -14,14 +14,14 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 8px; }
     .big-font { font-size: 24px !important; font-weight: bold; }
     .reportview-container { background: #f0f2f6 }
+    .success-box { padding: 1rem; background-color: #d4edda; border-color: #c3e6cb; color: #155724; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 1. GERAÇÃO DE DADOS (Simulando o Banco Legado) ---
-# Função para criar os dados caso não existam (igual ao script anterior, mas embutido)
 @st.cache_data
 def gerar_dados_iniciais():
-    num_pacientes = 500 # Reduzi para o SQL não ficar gigante no exemplo
+    num_pacientes = 500 
     data_base = datetime.now() - timedelta(days=30)
     
     nomes = ['Joao', 'Maria', 'Jose', 'Ana', 'Pedro', 'Carla', 'Lucas', 'Julia', 'Marcos', 'Fernanda']
@@ -32,8 +32,7 @@ def gerar_dados_iniciais():
     for i in range(num_pacientes):
         dt = data_base + timedelta(minutes=random.randint(0, 43200))
         temp = np.round(np.random.normal(37, 1.5), 1)
-        # Inserindo erro de sensor (0.0)
-        if random.random() < 0.03: temp = 0.0
+        if random.random() < 0.03: temp = 0.0 # Erro proposital
         
         dados.append({
             'id_atendimento': 1000 + i,
@@ -53,8 +52,7 @@ df_pacientes = gerar_dados_iniciais()
 # --- 2. FUNÇÕES GERADORAS DE SQL ---
 
 def gerar_sql_create_table():
-    """Gera o script DDL para criar a tabela no Workbench"""
-    sql = """
+    return """
 CREATE DATABASE IF NOT EXISTS hospital_db;
 USE hospital_db;
 
@@ -70,100 +68,112 @@ CREATE TABLE IF NOT EXISTS atendimentos (
     pressao VARCHAR(10)
 );
     """
-    return sql
 
-def gerar_sql_insert(df):
-    """Transforma o DataFrame em comandos INSERT INTO"""
+def gerar_sql_insert_bulk(df):
     inserts = []
     for index, row in df.iterrows():
-        # Tratamento de strings para SQL (aspas simples)
-        nome = row['nome_paciente']
-        queixa = row['queixa']
-        data = row['data_hora']
-        pressao = row['pressao']
-        
-        query = f"INSERT INTO atendimentos (id_atendimento, data_hora, nome_paciente, idade, queixa, temp, saturacao, bpm, pressao) VALUES ({row['id_atendimento']}, '{data}', '{nome}', {row['idade']}, '{queixa}', {row['temp']}, {row['saturacao']}, {row['bpm']}, '{pressao}');"
+        query = f"INSERT INTO atendimentos (id_atendimento, data_hora, nome_paciente, idade, queixa, temp, saturacao, bpm, pressao) VALUES ({row['id_atendimento']}, '{row['data_hora']}', '{row['nome_paciente']}', {row['idade']}, '{row['queixa']}', {row['temp']}, {row['saturacao']}, {row['bpm']}, '{row['pressao']}');"
         inserts.append(query)
-    
     return "\n".join(inserts)
 
 # --- INTERFACE DO STREAMLIT ---
 
-# Sidebar para Navegação
 menu = st.sidebar.radio("Navegação", ["🚑 Totem Triagem (Paciente)", "💾 Área TI & Dados (SQL)"])
 
 if menu == "🚑 Totem Triagem (Paciente)":
     # --- TELA 1: O TOTEM DE AUTOATENDIMENTO ---
-    st.image("https://img.icons8.com/color/96/hospital-2.png", width=60)
-    st.title("Triagem Rápida")
+    col_img, col_title = st.columns([1, 5])
+    with col_img: st.image("https://img.icons8.com/color/96/hospital-2.png", width=80)
+    with col_title: st.title("Triagem Rápida")
+    
     st.markdown("Preencha seus dados para classificação de risco.")
     
     with st.form("form_triagem"):
         col1, col2 = st.columns(2)
-        with col1: nome = st.text_input("Nome")
-        with col2: idade = st.number_input("Idade", 1, 120)
+        with col1: nome = st.text_input("Nome Completo")
+        with col2: idade = st.number_input("Idade", 1, 120, step=1)
         
         sintomas = st.text_area("O que você sente?")
         
-        st.caption("Sensores lendo sinais vitais...")
-        c1, c2, c3 = st.columns(3)
-        temp_lida = c1.number_input("Temp (°C)", value=36.5)
-        sat_lida = c2.number_input("Sat O2 (%)", value=98)
-        bpm_lido = c3.number_input("BPM", value=80)
+        st.markdown("**Sinais Vitais (Leitura dos Sensores):**")
+        c1, c2, c3, c4 = st.columns(4)
+        temp_lida = c1.number_input("Temp (°C)", value=36.5, step=0.1)
+        sat_lida = c2.number_input("Sat O2 (%)", value=98, step=1)
+        bpm_lido = c3.number_input("BPM", value=80, step=1)
+        pressao_lida = c4.text_input("Pressão", value="12/8")
         
         enviar = st.form_submit_button("Gerar Senha de Atendimento")
         
     if enviar:
-        st.success("✅ Aguarde ser chamado no painel.")
-        st.info(f"Dados enviados para o banco de dados: {nome}, {sintomas}")
+        if not nome or not sintomas:
+            st.error("Preencha todos os campos obrigatórios!")
+        else:
+            # Lógica de Classificação (Simulada)
+            cor = "Verde"
+            if temp_lida > 39 or sat_lida < 90: cor = "Vermelho"
+            elif temp_lida > 37.5: cor = "Amarelo"
+            
+            # --- GERAÇÃO DO SQL INDIVIDUAL (AQUI ESTÁ A MUDANÇA) ---
+            id_novo = random.randint(5000, 9999) # ID aleatório para o novo paciente
+            timestamp_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Monta a string do comando SQL
+            sql_individual = f"""INSERT INTO atendimentos (id_atendimento, data_hora, nome_paciente, idade, queixa, temp, saturacao, bpm, pressao) 
+VALUES ({id_novo}, '{timestamp_now}', '{nome}', {idade}, '{sintomas}', {temp_lida}, {sat_lida}, {bpm_lido}, '{pressao_lida}');"""
+            
+            # Exibe Resultado
+            st.markdown("---")
+            st.success(f"✅ Triagem Concluída! Classificação sugerida: **{cor.upper()}**")
+            
+            col_res_1, col_res_2 = st.columns(2)
+            
+            with col_res_1:
+                st.info("ℹ️ Copie o comando abaixo ou baixe o arquivo para inserir este paciente no seu Banco de Dados.")
+                st.code(sql_individual, language="sql")
+                
+            with col_res_2:
+                # Botão de Download do Registro Único
+                st.download_button(
+                    label="📥 Baixar SQL deste Paciente (.sql)",
+                    data=sql_individual,
+                    file_name=f"insert_paciente_{id_novo}.sql",
+                    mime="text/plain"
+                )
 
 elif menu == "💾 Área TI & Dados (SQL)":
     # --- TELA 2: O DESAFIO DOS ALUNOS (GERAÇÃO DE SQL) ---
     st.title("📂 Central de Engenharia de Dados")
     st.markdown("""
     **Instruções para a Equipe de Dados:**
-    1. Visualize os dados brutos gerados pelos totens abaixo.
-    2. Baixe o script **`create_database.sql`** para criar a estrutura no MySQL Workbench.
-    3. Baixe o script **`populate_data.sql`** para inserir os dados históricos.
-    4. Conecte o Power BI ao seu Banco de Dados Local.
+    Aqui você baixa a carga inicial (Histórico) para popular seu banco de dados.
     """)
     
     st.markdown("---")
-    st.subheader("1. Visualização dos Dados (Histórico)")
-    
-    # Checkbox para mostrar tabela
-    if st.checkbox("🔍 Ver Tabela de Dados Brutos"):
-        st.dataframe(df_pacientes, use_container_width=True)
-        st.caption(f"Total de registros: {len(df_pacientes)}")
-
-    st.markdown("---")
-    st.subheader("2. Download dos Scripts SQL")
     
     col_a, col_b = st.columns(2)
     
     with col_a:
-        # Botão para baixar o CREATE TABLE
+        st.subheader("1. Estrutura (DDL)")
         script_create = gerar_sql_create_table()
         st.download_button(
             label="📥 Baixar 1_create_database.sql",
             data=script_create,
             file_name="1_create_database.sql",
-            mime="text/plain",
-            help="Script DDL: Cria o Banco e a Tabela"
+            mime="text/plain"
         )
         st.code(script_create, language="sql")
 
     with col_b:
-        # Botão para baixar os INSERTS
-        script_insert = gerar_sql_insert(df_pacientes)
+        st.subheader("2. Carga Histórica (DML)")
+        script_insert = gerar_sql_insert_bulk(df_pacientes)
         st.download_button(
             label="📥 Baixar 2_populate_data.sql",
             data=script_insert,
             file_name="2_populate_data.sql",
-            mime="text/plain",
-            help="Script DML: Insere todos os registros na tabela"
+            mime="text/plain"
         )
-        st.warning("⚠️ Este arquivo contém comandos INSERT. Execute APÓS criar a tabela.")
+        st.info(f"Contém {len(df_pacientes)} registros simulados.")
 
     st.markdown("---")
-    st.error("🔒 **Lembrete LGPD:** Ao conectar o Power BI, lembre-se de tratar a coluna 'nome_paciente'.")
+    if st.checkbox("🔍 Espiar dados brutos"):
+        st.dataframe(df_pacientes)
