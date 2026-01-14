@@ -1,100 +1,169 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import time
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 
-# --- Configuração da Página (Modo Kiosk) ---
-st.set_page_config(page_title="Smart Triage - Hospital Santa Clara", page_icon="🏥", layout="centered")
+# --- Configuração da Página ---
+st.set_page_config(page_title="Smart Triage & Admin", page_icon="🏥", layout="wide")
 
-# --- CSS para parecer um Totem Hospitalar ---
+# --- CSS Personalizado ---
 st.markdown("""
 <style>
-    .stButton>button {
-        width: 100%;
-        height: 60px;
-        font-size: 20px;
-        border-radius: 12px;
-    }
-    .big-font {
-        font-size: 30px !important;
-        font-weight: bold;
-    }
-    .stAlert {
-        font-size: 18px;
-    }
+    .stButton>button { width: 100%; border-radius: 8px; }
+    .big-font { font-size: 24px !important; font-weight: bold; }
+    .reportview-container { background: #f0f2f6 }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Cabeçalho ---
-st.image("https://img.icons8.com/color/96/hospital-2.png", width=80)
-st.title("Triagem Inteligente")
-st.markdown("Bem-vindo ao Hospital Santa Clara. Por favor, preencha seus dados.")
-st.progress(0)
+# --- 1. GERAÇÃO DE DADOS (Simulando o Banco Legado) ---
+# Função para criar os dados caso não existam (igual ao script anterior, mas embutido)
+@st.cache_data
+def gerar_dados_iniciais():
+    num_pacientes = 500 # Reduzi para o SQL não ficar gigante no exemplo
+    data_base = datetime.now() - timedelta(days=30)
+    
+    nomes = ['Joao', 'Maria', 'Jose', 'Ana', 'Pedro', 'Carla', 'Lucas', 'Julia', 'Marcos', 'Fernanda']
+    sobrenomes = ['Silva', 'Santos', 'Oliveira', 'Souza', 'Rodrigues', 'Ferreira', 'Almeida']
+    sintomas_txt = ["dor no peito", "corte no dedo", "enxaqueca", "febre alta", "unha encravada", "dor abdominal", "acidente moto", "falta de ar"]
+    
+    dados = []
+    for i in range(num_pacientes):
+        dt = data_base + timedelta(minutes=random.randint(0, 43200))
+        temp = np.round(np.random.normal(37, 1.5), 1)
+        # Inserindo erro de sensor (0.0)
+        if random.random() < 0.03: temp = 0.0
+        
+        dados.append({
+            'id_atendimento': 1000 + i,
+            'data_hora': dt.strftime("%Y-%m-%d %H:%M:%S"),
+            'nome_paciente': f"{random.choice(nomes)} {random.choice(sobrenomes)}",
+            'idade': random.randint(18, 90),
+            'queixa': random.choice(sintomas_txt),
+            'temp': temp,
+            'saturacao': random.randint(85, 100),
+            'bpm': random.randint(50, 140),
+            'pressao': random.choice(["12/8", "14/9", "18/10", "10/6"])
+        })
+    return pd.DataFrame(dados)
 
-# --- Formulário do Paciente (Simulação de Sensores + Input) ---
-with st.form("triagem_form"):
-    st.subheader("1. Identificação")
-    nome = st.text_input("Nome Completo")
-    idade = st.number_input("Idade", min_value=0, max_value=120, step=1)
+df_pacientes = gerar_dados_iniciais()
+
+# --- 2. FUNÇÕES GERADORAS DE SQL ---
+
+def gerar_sql_create_table():
+    """Gera o script DDL para criar a tabela no Workbench"""
+    sql = """
+CREATE DATABASE IF NOT EXISTS hospital_db;
+USE hospital_db;
+
+CREATE TABLE IF NOT EXISTS atendimentos (
+    id_atendimento INT PRIMARY KEY,
+    data_hora DATETIME,
+    nome_paciente VARCHAR(100),
+    idade INT,
+    queixa TEXT,
+    temp DECIMAL(4,1),
+    saturacao INT,
+    bpm INT,
+    pressao VARCHAR(10)
+);
+    """
+    return sql
+
+def gerar_sql_insert(df):
+    """Transforma o DataFrame em comandos INSERT INTO"""
+    inserts = []
+    for index, row in df.iterrows():
+        # Tratamento de strings para SQL (aspas simples)
+        nome = row['nome_paciente']
+        queixa = row['queixa']
+        data = row['data_hora']
+        pressao = row['pressao']
+        
+        query = f"INSERT INTO atendimentos (id_atendimento, data_hora, nome_paciente, idade, queixa, temp, saturacao, bpm, pressao) VALUES ({row['id_atendimento']}, '{data}', '{nome}', {row['idade']}, '{queixa}', {row['temp']}, {row['saturacao']}, {row['bpm']}, '{pressao}');"
+        inserts.append(query)
+    
+    return "\n".join(inserts)
+
+# --- INTERFACE DO STREAMLIT ---
+
+# Sidebar para Navegação
+menu = st.sidebar.radio("Navegação", ["🚑 Totem Triagem (Paciente)", "💾 Área TI & Dados (SQL)"])
+
+if menu == "🚑 Totem Triagem (Paciente)":
+    # --- TELA 1: O TOTEM DE AUTOATENDIMENTO ---
+    st.image("https://img.icons8.com/color/96/hospital-2.png", width=60)
+    st.title("Triagem Rápida")
+    st.markdown("Preencha seus dados para classificação de risco.")
+    
+    with st.form("form_triagem"):
+        col1, col2 = st.columns(2)
+        with col1: nome = st.text_input("Nome")
+        with col2: idade = st.number_input("Idade", 1, 120)
+        
+        sintomas = st.text_area("O que você sente?")
+        
+        st.caption("Sensores lendo sinais vitais...")
+        c1, c2, c3 = st.columns(3)
+        temp_lida = c1.number_input("Temp (°C)", value=36.5)
+        sat_lida = c2.number_input("Sat O2 (%)", value=98)
+        bpm_lido = c3.number_input("BPM", value=80)
+        
+        enviar = st.form_submit_button("Gerar Senha de Atendimento")
+        
+    if enviar:
+        st.success("✅ Aguarde ser chamado no painel.")
+        st.info(f"Dados enviados para o banco de dados: {nome}, {sintomas}")
+
+elif menu == "💾 Área TI & Dados (SQL)":
+    # --- TELA 2: O DESAFIO DOS ALUNOS (GERAÇÃO DE SQL) ---
+    st.title("📂 Central de Engenharia de Dados")
+    st.markdown("""
+    **Instruções para a Equipe de Dados:**
+    1. Visualize os dados brutos gerados pelos totens abaixo.
+    2. Baixe o script **`create_database.sql`** para criar a estrutura no MySQL Workbench.
+    3. Baixe o script **`populate_data.sql`** para inserir os dados históricos.
+    4. Conecte o Power BI ao seu Banco de Dados Local.
+    """)
     
     st.markdown("---")
-    st.subheader("2. Sinais Vitais (Simulado pelos Sensores do Totem)")
+    st.subheader("1. Visualização dos Dados (Histórico)")
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        temp = st.slider("🌡️ Temperatura (°C)", 34.0, 42.0, 36.5)
-    with col2:
-        sat = st.slider("🫁 Saturação O2 (%)", 70, 100, 98)
-    with col3:
-        bpm = st.number_input("❤️ Batimentos (BPM)", 40, 200, 80)
+    # Checkbox para mostrar tabela
+    if st.checkbox("🔍 Ver Tabela de Dados Brutos"):
+        st.dataframe(df_pacientes, use_container_width=True)
+        st.caption(f"Total de registros: {len(df_pacientes)}")
 
     st.markdown("---")
-    st.subheader("3. O que você está sentindo?")
-    sintomas = st.text_area("Descreva seus sintomas (Ex: dor no peito, falta de ar...)", height=100)
+    st.subheader("2. Download dos Scripts SQL")
     
-    submit = st.form_submit_button("ANALISAR GRAVIDADE 🚑")
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        # Botão para baixar o CREATE TABLE
+        script_create = gerar_sql_create_table()
+        st.download_button(
+            label="📥 Baixar 1_create_database.sql",
+            data=script_create,
+            file_name="1_create_database.sql",
+            mime="text/plain",
+            help="Script DDL: Cria o Banco e a Tabela"
+        )
+        st.code(script_create, language="sql")
 
-# --- O "Back-End" simulado no Front (Onde o aluno entra) ---
-if submit:
-    if not nome or not sintomas:
-        st.error("Por favor, preencha nome e sintomas.")
-    else:
-        with st.spinner('A Inteligência Artificial está analisando seu caso...'):
-            time.sleep(2) # Drama time
-            
-            # --- LÓGICA QUE O ALUNO DEVE DESENVOLVER (Aqui está simplificada) ---
-            cor_pulseira = "Azul"
-            msg = "Atendimento Não Urgente"
-            
-            # Regra simples de palavras-chave (NLP Básico)
-            sintomas_lower = sintomas.lower()
-            if "peito" in sintomas_lower or "ar" in sintomas_lower or "desmaio" in sintomas_lower:
-                cor_pulseira = "Vermelho"
-            elif temp >= 39 or sat < 90:
-                cor_pulseira = "Laranja"
-            elif temp >= 37.8 or bpm > 110:
-                cor_pulseira = "Amarelo"
-            else:
-                cor_pulseira = "Verde"
-            
-            # --- Resultado na Tela ---
-            st.markdown("---")
-            st.markdown(f"<p class='big-font'>Classificação: <span style='color:{cor_pulseira};'>{cor_pulseira.upper()}</span></p>", unsafe_allow_html=True)
-            
-            if cor_pulseira == "Vermelho":
-                st.error("🚨 DIRIGIA-SE IMEDIATAMENTE À SALA DE EMERGÊNCIA 01.")
-            elif cor_pulseira == "Laranja":
-                st.warning("⚠️ Atendimento Prioritário. Aguarde na Recepção A.")
-            else:
-                st.success("✅ Aguarde ser chamado pelo painel. Tempo estimado: 40 min.")
-                
-            # Exibir JSON para o aluno entender o que deve salvar no Banco
-            st.markdown("---")
-            st.caption("🔧 Dados enviados ao Servidor (Back-end):")
-            st.json({
-                "paciente": nome, 
-                "sintomas": sintomas, 
-                "vitals": {"temp": temp, "o2": sat, "bpm": bpm},
-                "timestamp": datetime.now().isoformat(),
-                "triagem_ia": cor_pulseira
-            })
+    with col_b:
+        # Botão para baixar os INSERTS
+        script_insert = gerar_sql_insert(df_pacientes)
+        st.download_button(
+            label="📥 Baixar 2_populate_data.sql",
+            data=script_insert,
+            file_name="2_populate_data.sql",
+            mime="text/plain",
+            help="Script DML: Insere todos os registros na tabela"
+        )
+        st.warning("⚠️ Este arquivo contém comandos INSERT. Execute APÓS criar a tabela.")
+
+    st.markdown("---")
+    st.error("🔒 **Lembrete LGPD:** Ao conectar o Power BI, lembre-se de tratar a coluna 'nome_paciente'.")
