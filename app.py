@@ -116,7 +116,5 @@ elif menu == "💾 API Gateway (JSONs)":
     st.subheader("Desafio Técnico (Pleno)")
     st.markdown("""
     1. Ler o arquivo JSON via Python (`json.load`).
-    2. Aplicar a **Lógica de Manchester** (Se Temp > 39 = Vermelho, etc).
-    3. Normalizar os dados (Separar Paciente de Triagem).
-    4. Inserir nas tabelas SQL usando `mysql-connector` ou `SQLAlchemy`.
+
     """)
